@@ -1,13 +1,18 @@
-# Hand-Eye Calibration Toolkit
+# 手眼标定工具包
 
-这个仓库包含一套机械臂手眼标定实验代码，主要围绕两条路线：
+本仓库是一套用于机械臂手眼标定的实验代码，主要包含两条路线：
 
-1. **官方棋盘格法**：使用棋盘格图像和机械臂末端位姿，通过 OpenCV `calibrateHandEye` 求解手眼矩阵。
-2. **Jing 小方块法**：使用相机识别到的方块中心 3D 坐标、机械臂末端位姿、以及方块在机械臂基坐标系下的真实坐标，通过最小二乘拟合相机到末端的变换。
+1. **官方棋盘格方法**：采集棋盘格图像和机械臂末端位姿，通过 OpenCV `calibrateHandEye` 求解手眼矩阵。
+2. **Jing 小方块方法**：使用相机检测到的小方块中心 3D 坐标、机械臂末端位姿，以及小方块中心在机械臂基坐标系下的真实坐标，通过最小二乘拟合相机到机械臂末端的变换。
 
-`jing_hand_eye_compute.py` 和 `detect_red_block.py` 是自定义的小方块方案；`compute_in_hand.py` 是官方棋盘格流程；`compute_in_hand_12data.py` 是用 Jing 方法测出来的 12 组样例数据验证脚本。
+其中：
 
-## Directory
+- `compute_in_hand.py` 是官方眼在手上棋盘格标定流程。
+- `jing_hand_eye_compute.py` 是自定义的小方块最小二乘标定流程。
+- `detect_red_block.py` 保留旧文件名，但现在已经改成“任意颜色小方块检测”，不再只识别红色。
+- `compute_in_hand_12data.py` 是用 Jing 方法整理出的 12 组样例数据验证脚本。
+
+## 目录结构
 
 ```text
 hand_eye_calibration/
@@ -27,11 +32,11 @@ hand_eye_calibration/
   jing_data/eye_hand_data/     # Jing 小方块数据目录，仓库只保留占位
 ```
 
-采集图片、日志、运行结果、虚拟环境和缓存文件默认不提交。
+采集图片、运行日志、运行结果、虚拟环境和缓存文件默认不提交到仓库。
 
-## Install
+## 环境安装
 
-建议使用 Python 3.10 或 3.11：
+建议使用 Python 3.10 或 Python 3.11：
 
 ```powershell
 python -m venv venv
@@ -39,13 +44,15 @@ python -m venv venv
 pip install -r .\hand_eye_calibration\requirements.txt
 ```
 
-如果要运行 RealSense 相机检测，还需要安装与你相机环境匹配的 `pyrealsense2`。
+如果需要运行 RealSense 相机检测，还要安装与相机环境匹配的 `pyrealsense2`。
 
-## Official Checkerboard Calibration
+## 官方棋盘格标定流程
 
-官方流程适合标准棋盘格标定：
+官方流程适合使用标准棋盘格进行手眼标定。
 
-1. 修改 [config.yaml](hand_eye_calibration/config.yaml) 中的棋盘格参数：
+### 1. 配置棋盘格参数
+
+修改 [config.yaml](hand_eye_calibration/config.yaml)：
 
 ```yaml
 checkerboard_args:
@@ -54,73 +61,106 @@ checkerboard_args:
   L: 0.03
 ```
 
-2. 采集棋盘格图像和机械臂位姿：
+含义：
+
+- `XX`：棋盘格横向内角点数量。
+- `YY`：棋盘格纵向内角点数量。
+- `L`：单个格子的边长，单位为米。
+
+### 2. 采集棋盘格图像和机械臂位姿
 
 ```powershell
 cd hand_eye_calibration
 python collect_data.py
 ```
 
-数据会放到 `eye_hand_data/dataYYYYMMDD.../`，其中图片名和 `poses.txt` 行号需要一一对应。
+采集结果会保存到：
 
-3. 计算眼在手上标定：
+```text
+eye_hand_data/dataYYYYMMDD.../
+```
+
+目录中包含：
+
+- `1.jpg`, `2.jpg`, ...：采集到的棋盘格图像。
+- `poses.txt`：每张图像对应的机械臂末端位姿。
+
+注意：图片序号必须和 `poses.txt` 中的行号一一对应。
+
+### 3. 计算眼在手上标定结果
 
 ```powershell
 python compute_in_hand.py
 ```
 
-输出为相机坐标系相对于机械臂末端坐标系的旋转矩阵和平移向量。
+输出结果为相机坐标系相对于机械臂末端坐标系的旋转矩阵和平移向量。
 
-## Jing Square Calibration
+## Jing 小方块标定流程
 
-Jing 方法用一个小方块替代棋盘格。它不要求固定红色，也不要求固定 3 cm。
+Jing 方法使用一个已知真实位置的小方块替代棋盘格。它不要求方块一定是红色，也不要求方块一定是 3 cm。
 
-### 1. Detect The Square
+核心关系为：
 
-运行小方块检测：
+```text
+base下的小方块坐标 ≈ base_T_end * end_T_camera * camera下的小方块坐标
+```
+
+代码要求解的是 `end_T_camera`，也就是相机坐标系到机械臂末端坐标系的变换。
+
+## 任意颜色小方块检测
+
+运行检测脚本：
 
 ```powershell
 cd hand_eye_calibration
 python detect_red_block.py
 ```
 
-启动时会要求输入方块边长，单位是厘米。也可以直接传入：
+启动后会要求输入小方块边长，单位为厘米。也可以直接通过命令行指定：
 
 ```powershell
 python detect_red_block.py --size-cm 4
 ```
 
-现在 `detect_red_block.py` 的行为是：
+当前 `detect_red_block.py` 的功能：
 
-- 自动寻找近似正方形轮廓；
-- 根据输入的真实边长和深度估计理论像素边长，用于过滤误检；
-- 自动学习候选方块区域的颜色，后续帧用该颜色模型追踪；
-- 支持红、蓝、绿等任意明显颜色；低饱和的黑白方块主要依靠轮廓；
-- 按 `R` 重置颜色模型，按 `ESC` 退出。
+- 自动寻找近似正方形轮廓。
+- 根据用户输入的真实边长和当前深度，估算理论像素边长，用于过滤误检。
+- 自动学习候选方块区域的颜色，后续帧使用该颜色模型追踪。
+- 支持红色、蓝色、绿色等任意明显颜色。
+- 对黑色、白色等低饱和颜色，主要依赖方形轮廓和尺寸约束。
+- 按 `R` 可以重置颜色模型。
+- 按 `ESC` 退出检测窗口。
 
-检测到方块后会打印方块中心在相机坐标系下的坐标：
+检测到方块后会输出方块中心在相机坐标系下的坐标：
 
 ```text
 Square center: X=..., Y=..., Z=..., side=...cm
 ```
 
-### 2. Prepare Jing Data
+这些坐标就是 Jing 标定数据中的前三列。
 
-Jing 标定需要每组数据包含 9 个数：
+## Jing 数据格式
+
+Jing 标定每组数据需要 9 个数：
 
 ```text
 camera_x camera_y camera_z end_x end_y end_z end_rx end_ry end_rz
 ```
 
-前三列是方块中心在相机坐标系下的位置，后六列是机械臂末端在基座坐标系下的位置和欧拉角，单位为米和弧度。
+含义：
 
-默认数据路径：
+- `camera_x camera_y camera_z`：小方块中心在相机坐标系下的位置，单位为米。
+- `end_x end_y end_z`：机械臂末端在基座坐标系下的位置，单位为米。
+- `end_rx end_ry end_rz`：机械臂末端姿态角，单位为弧度。
+
+默认数据路径为：
 
 ```text
 hand_eye_calibration/jing_data/eye_hand_data/dataYYYYMMDD/poses.txt
 ```
 
-也支持这些文件名：
+也支持以下文件名：
 
 ```text
 jing_samples.csv
@@ -139,13 +179,13 @@ CSV 表头可以使用：
 camera_x,camera_y,camera_z,end_x,end_y,end_z,end_rx,end_ry,end_rz
 ```
 
-或者：
+也可以使用：
 
 ```csv
 x,y,z,x1,y1,z1,rx,ry,rz
 ```
 
-### 3. Compute Jing Calibration
+## 计算 Jing 标定结果
 
 运行：
 
@@ -154,13 +194,15 @@ cd hand_eye_calibration
 python jing_hand_eye_compute.py --expected-obj-base 0.4,0.2,0.03
 ```
 
-`--expected-obj-base` 是小方块中心在机械臂基座坐标系下的真实坐标，单位为米。如果不传，默认使用：
+`--expected-obj-base` 表示小方块中心在机械臂基坐标系下的真实坐标，单位为米。
+
+如果不传该参数，默认使用：
 
 ```text
 0.4,0.2,0.03
 ```
 
-可以指定数据文件：
+也可以指定数据文件：
 
 ```powershell
 python jing_hand_eye_compute.py --data-file .\jing_data\eye_hand_data\data2026030301\poses.txt --expected-obj-base 0.4,0.2,0.03
@@ -172,20 +214,20 @@ python jing_hand_eye_compute.py --data-file .\jing_data\eye_hand_data\data202603
 hand_eye_calibration/hand_eye_result_jing.yaml
 ```
 
-结果包含：
+结果文件包含：
 
-- `rotation_matrix`
-- `translation_vector`
-- `quaternion`
-- `expected_obj_base`
-- `sample_count`
-- `source_file`
-- `avg_error_mm`
-- `per_sample_error_mm`
+- `rotation_matrix`：相机到末端的旋转矩阵。
+- `translation_vector`：相机到末端的平移向量。
+- `quaternion`：旋转矩阵对应的四元数。
+- `expected_obj_base`：小方块在基座坐标系下的真实坐标。
+- `sample_count`：参与计算的数据组数。
+- `source_file`：使用的数据文件。
+- `avg_error_mm`：平均误差，单位为毫米。
+- `per_sample_error_mm`：每组样本的误差，单位为毫米。
 
-### 4. Python API
+## Python 调用方式
 
-`jing_hand_eye_compute.py` 保留了和官方脚本类似的接口：
+`jing_hand_eye_compute.py` 保留了和官方脚本类似的 `func()` 接口：
 
 ```python
 from jing_hand_eye_compute import func
@@ -196,23 +238,57 @@ rotation_matrix, translation_vector = func(
 )
 ```
 
-返回：
+返回值：
 
 ```text
 rotation_matrix: (3, 3)
 translation_vector: (3, 1)
 ```
 
-## Method Comparison
+因此其它代码如果原本接收 `compute_in_hand.func()` 的结果，也可以改成接收 `jing_hand_eye_compute.func()` 的结果。
 
-官方棋盘格法优点是理论标准、约束强、不需要知道目标在基座下的真实坐标；缺点是必须准备棋盘格并稳定检测角点。
+## 两种方法的优缺点
 
-Jing 小方块法优点是更贴近抓取任务，不依赖棋盘格，能直接验证相机点到基座点的误差；缺点是需要知道小方块中心在基座坐标系下的真实位置，而且只用中心点时对旋转约束较弱，对深度噪声和采样姿态多样性更敏感。
+### 官方棋盘格方法
 
-如果要进一步逼近棋盘格方法的约束强度，下一步可以让小方块检测输出四个角点，再用真实边长求方块姿态，而不是只使用中心点。
+优点：
 
-## Notes
+- 理论标准，是典型的 AX=XB 手眼标定问题。
+- 棋盘格角点提供较强的位姿约束。
+- 不需要知道棋盘格在机械臂基坐标系下的真实位置。
+- 更适合做规范化、可复现实验。
 
-- 机械臂末端姿态角默认按 `xyz` 欧拉角、弧度处理。
-- 采集数据时要保证相机坐标、机械臂位姿和真实基座坐标对应同一次采样。
-- Jing 方法建议采集至少 10 组姿态，并尽量覆盖不同位置和旋转角度。
+缺点：
+
+- 需要准备棋盘格。
+- 对角点检测质量比较敏感。
+- 棋盘格标定得到的是几何标定结果，不一定直接反映实际抓取红块时的最终误差。
+
+### Jing 小方块方法
+
+优点：
+
+- 更贴近实际抓取任务。
+- 不依赖棋盘格。
+- 可以直接用相机识别到的小方块中心验证“相机点转基座点”的误差。
+- 方块颜色不固定，边长可由用户输入。
+
+缺点：
+
+- 必须知道小方块中心在机械臂基坐标系下的真实坐标。
+- 只使用中心点时，对旋转的约束比棋盘格弱。
+- 对深度噪声、颜色分割误差、采样姿态多样性更敏感。
+- 建议采集不少于 10 组数据，并尽量覆盖不同位置和不同末端姿态。
+
+## 后续改进方向
+
+目前 Jing 方法主要使用小方块中心点。如果想进一步接近棋盘格方法的约束强度，可以让检测脚本输出小方块四个角点，再结合真实边长估计方块完整姿态，而不仅仅使用中心点。
+
+这样可以把“小方块方法”从点约束扩展成位姿约束，理论上会比只用中心点更加稳定。
+
+## 注意事项
+
+- 机械臂末端姿态默认按 `xyz` 欧拉角处理，单位为弧度。
+- 采集数据时要保证相机坐标、机械臂位姿和真实基座坐标来自同一次采样。
+- Jing 方法中的 `expected_obj_base` 一定要填写小方块中心在基座坐标系下的真实坐标。
+- 数据质量比算法本身更重要：深度异常、方块遮挡、机械臂位姿记录错位都会明显影响结果。
